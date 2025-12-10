@@ -18,7 +18,7 @@ services:
       KAFKA_PROCESS_ROLES: 'broker,controller'  
         # Runs BOTH roles (single-node KRaft setup)
 
-      KAFKA_CONTROLLER_QUORUM_VOTERS: '1@kafka1:9093'
+      KAFKA_CONTROLLER_QUORUM_VOTERS: '1@kafka1:9093,2@kafka2:9093,3@kafka3:9093'
         # Controller quorum definition → nodeId@host:port
         # Only 1 voter because this is a single-node cluster
 
@@ -49,15 +49,15 @@ services:
         # Static cluster ID for KRaft metadata storage
         # Must stay stable or Kafka will refuse to start
 
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
         # Internal __consumer_offsets topic replication
         # Must be 1 for single node
 
-      KAFKA_DEFAULT_REPLICATION_FACTOR: 1
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 3
         # Default replication factor for new topics
         # Must be 1 for single node
 
-      KAFKA_MIN_INSYNC_REPLICAS: 1
+      KAFKA_MIN_INSYNC_REPLICAS: 2
         # Required number of replicas for producing
         # Must be 1 for single node
 
@@ -68,7 +68,65 @@ services:
       - ./kafka1/data:/var/lib/kafka/data   # Persist Kafka data locally
     networks:
       - kafka-net
+  kafka2:
+    image: confluentinc/cp-kafka:7.8.0   
+    hostname: kafka2                    
+    container_name: kafka2              
+    ports:
+      - "9096:9096"  
+      - "9097:9097"  
+    environment:
+      KAFKA_NODE_ID: 2                  
+      KAFKA_BROKER_ID: 2               
+      KAFKA_PROCESS_ROLES: 'broker,controller'  
+      KAFKA_CONTROLLER_QUORUM_VOTERS: '1@kafka1:9093,2@kafka2:9093,3@kafka3:9093'
+      KAFKA_LISTENERS: 
+        'CONTROLLER://kafka2:9093,INTERNAL://0.0.0.0:9096,EXTERNAL://0.0.0.0:9097'
+      KAFKA_ADVERTISED_LISTENERS:
+        'INTERNAL://kafka2:9096,EXTERNAL://localhost:9097'
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP:
+        'CONTROLLER:PLAINTEXT,INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT'
+      KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
+      KAFKA_INTER_BROKER_LISTENER_NAME: 'INTERNAL'
+      CLUSTER_ID: 'EmptNWtoR4GGWx-BH6nGLQ'
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 3
+      KAFKA_MIN_INSYNC_REPLICAS: 2
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+    volumes:
+      - ./kafka2/data:/var/lib/kafka/data   
+    networks:
+      - kafka-net
 
+  kafka3:
+    image: confluentinc/cp-kafka:7.8.0   
+    hostname: kafka3                   
+    container_name: kafka3              
+    ports:
+      - "9098:9098"  
+      - "9099:9099"  
+    environment:
+      KAFKA_NODE_ID: 3                  
+      KAFKA_BROKER_ID: 3               
+      KAFKA_PROCESS_ROLES: 'broker,controller'  
+      KAFKA_CONTROLLER_QUORUM_VOTERS: '1@kafka1:9093,2@kafka2:9093,3@kafka3:9093'
+      KAFKA_LISTENERS: 
+        'CONTROLLER://kafka3:9093,INTERNAL://0.0.0.0:9098,EXTERNAL://0.0.0.0:9099'
+      KAFKA_ADVERTISED_LISTENERS:
+        'INTERNAL://kafka3:9098,EXTERNAL://localhost:9099'
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP:
+        'CONTROLLER:PLAINTEXT,INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT'
+      KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
+      KAFKA_INTER_BROKER_LISTENER_NAME: 'INTERNAL'
+      CLUSTER_ID: 'EmptNWtoR4GGWx-BH6nGLQ'
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 3
+      KAFKA_MIN_INSYNC_REPLICAS: 2
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+    volumes:
+      - ./kafka3/data:/var/lib/kafka/data   
+    networks:
+      - kafka-net
   postgres:
     image: postgres:15                     # PostgreSQL DB to store Conduktor metadata
     container_name: conduktor-postgres
@@ -88,7 +146,9 @@ services:
     container_name: schema-registry
     hostname: schema-registry
     depends_on:
-      - kafka1                              # Must start after Kafka
+      - kafka1
+      - kafka2   
+      - kafka3                              # Must start after Kafka
     ports:
       - "8088:8088"                         # Schema Registry API exposed to host
     environment:
@@ -98,7 +158,7 @@ services:
       SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:8088
         # Where the registry binds (inside the container)
 
-      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: "kafka1:9092"
+      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: "kafka1:9092,kafka2:9096,kafka3:9098"
         # Schema registry connects to Kafka’s INTERNAL listener
 
       SCHEMA_REGISTRY_KAFKASTORE_TOPIC: "_schemas"
@@ -112,6 +172,8 @@ services:
     container_name: conduktor
     depends_on:
       - kafka1
+      - kafka2
+      - kafka3
       - postgres
       - schema-registry
         # Conduktor must start after all dependencies
@@ -135,7 +197,7 @@ services:
       CDK_CLUSTERS_0_NAME: "Local Kafka Cluster"
         # Display name inside the UI
 
-      CDK_CLUSTERS_0_BOOTSTRAPSERVERS: "kafka1:9092"
+      CDK_CLUSTERS_0_BOOTSTRAPSERVERS: "kafka1:9092,kafka2:9096,kafka3:9098"
         # INTERNAL listener inside Docker
 
       CDK_CLUSTERS_0_SCHEMAREGISTRY_URL: "http://schema-registry:8088"
